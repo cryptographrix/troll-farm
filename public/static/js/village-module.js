@@ -49,14 +49,15 @@ var TrollConnection = function() {
 var TrollVillageModule = function(widgetDiv) {
 	var self = this;
 
-	this.trolls = {};  // maps {trollID: troll}
+	this.items = {};  // maps {itemID: DrawableItem}
 	this.localID;
 
 	var trollConnection;
 
 	this.widgetDiv = widgetDiv;
 	this.canvas;
-	this.context;
+	this.movingContext;
+	this.staticContext;
 
 	/* board is a 10x10 grid with 40x40 px squares  */
 	this.board = {"width": 10,
@@ -64,21 +65,21 @@ var TrollVillageModule = function(widgetDiv) {
 				  "cellSize": 40,
 				 }
 
-	this.removeTroll = function(trollID) {
-		if (this.trolls[trollID]) {
-			this.trolls[trollID].erase();
-			delete this.trolls[trollID];
+	this.removeItem = function(trollID) {
+		if (this.items[trollID]) {
+			this.items[trollID].erase();
+			delete this.items[trollID];
 		}
 	}
-	this.updateTroll = function(trollID, troll) {
-		if (troll.Name == "DELETE") 
-			return this.removeTroll(trollID);
+	this.updateItem = function(itemID, item) {
+		if (item.Name == "DELETE") 
+			return this.removeItem(itemID);
 
-		if (self.trolls[trollID]) {
-			self.trolls[trollID].update(troll.Coordinates.x,troll.Coordinates.y);
+		if (self.items[itemID]) {
+			self.items[itemID].update(item.Coordinates.x, item.Coordinates.y);
 		} else {
-			self.trolls[trollID] = new OtherTroll();
-			self.trolls[trollID].init(troll.Coordinates.x,troll.Coordinates.y, self.context, self.board);
+			self.items[itemID] = new OtherTroll();
+			self.items[itemID].init(item.Coordinates.x, item.Coordinates.y);
 		}	
 	}
 
@@ -86,39 +87,43 @@ var TrollVillageModule = function(widgetDiv) {
 		console.log('TrollVillageModule recieveUpdate')
 		console.log(msg)
 
-		var troll; // recycled variable as iterate through map
-		var trollsMap = msg.TrollsMap;
+		var item; // recycled variable as iterate through map
+		var itemsMap = msg.ItemsMap;
 
-		for (var trollID in trollsMap) {
-			troll = trollsMap[trollID]
-			self.updateTroll(trollID, troll);
+		for (var itemID in itemsMap) {
+			item = itemsMap[itemID]
+			self.updateItem(itemID, item);
 		}	
 	}
 
-	this.recieveTrolls = function(msg) {
-		console.log('TrollVillageModule recieveTrolls')
+	this.recieveItems = function(msg) {
+		console.log('TrollVillageModule recieveItems')
 		console.log(msg)
 
-		// clear out old trolls
-		self.trolls = {};
+		// clear out old items
+		self.items = {};
 
 		self.localID = msg.LocalTroll;
-		var troll; // recycled variable as iterate through map
+		var item; // recycled variable as iterate through map
 
-		var trollsMap = msg.TrollsMap;
-		for (var trollID in trollsMap) {
+		var itemsMap = msg.ItemsMap;
+		for (var itemID in itemsMap) {
 
-			var newTroll;
-			
-			troll = trollsMap[trollID];
-			if (trollID == self.localID) {
-				newTroll = new LocalTroll();
+			var newItem;
+			// anything that doesnt have a special item name is a Troll
+			item = itemsMap[itemID];
+			if (item.Name == "BANANA") {
+				newItem = new Banana();
+			} else if (item.Name == "FOODBUTTON") {
+				newItem = new FoodButton();
+			} else if (itemID == self.localID) {
+				newItem = new LocalTroll();
 			} else {
-				newTroll = new OtherTroll();
+				newItem = new OtherTroll();
 			}
-			newTroll.init(troll.Coordinates.x,troll.Coordinates.y, self.context, self.board);
-			newTroll.id = trollID;
-			self.trolls[trollID] = newTroll;
+			newItem.init(item.Coordinates.x, item.Coordinates.y);
+			newItem.id = itemID;
+			self.items[itemID] = newItem;
 
 		}
 	}
@@ -127,41 +132,47 @@ var TrollVillageModule = function(widgetDiv) {
 	}
 
 	this.createCanvas = function() {
-		this.canvas = document.createElement('canvas');
-		this.canvas.id = "trollVillageModule-canvas";
-		this.canvas.width = this.board.width*this.board.cellSize;
-		this.canvas.height = this.board.height*this.board.cellSize;
-		this.widgetDiv.appendChild(this.canvas);
-		this.context = this.canvas.getContext("2d");
+		var canvas = document.createElement('canvas');
+		canvas.width = this.board.width*this.board.cellSize;
+		canvas.height = this.board.height*this.board.cellSize;
+		return canvas;
 	}
 	this.drawBoard = function() {
-		if (! this.canvas ) this.createCanvas();
+		this.staticCanvas = this.createCanvas();
+		this.staticContext = this.staticCanvas.getContext("2d");
+		this.widgetDiv.appendChild(this.staticCanvas);
+
+		this.movingCanvas = this.createCanvas();
+		this.movingContext = this.movingCanvas.getContext("2d");
+		this.widgetDiv.appendChild(this.movingCanvas);
 
 		for (var x=0; x<=this.board.width; x+=1) {
-			this.context.moveTo(x*this.board.cellSize, 0);
-			this.context.lineTo(x*this.board.cellSize, this.board.height*this.board.cellSize);
+			this.staticContext.moveTo(x*this.board.cellSize, 0);
+			this.staticContext.lineTo(x*this.board.cellSize, this.board.height*this.board.cellSize);
 		}
 		for (var y=0; y<=this.board.height; y+=1) {
-			this.context.moveTo(0, y*this.board.cellSize);
-			this.context.lineTo(this.board.width*this.board.cellSize, y*this.board.cellSize);
+			this.staticContext.moveTo(0, y*this.board.cellSize);
+			this.staticContext.lineTo(this.board.width*this.board.cellSize, y*this.board.cellSize);
 		}	
-		this.context.strokeStyle = "black";
-		this.context.stroke();
+		this.staticContext.strokeStyle = "black";
+		this.staticContext.stroke();
 	}
 
 	/* Define an object to hold all our images for the game so images are only ever created once. */
 	var imageRepository = new function() {
         // Define images
-        this.troll = new Image();
+        this.troll 		= new Image();
         this.otherTroll = new Image();
+        this.foodButton = new Image();
+        this.banana		= new Image();
 
         // Ensure all images have loaded before starting the game
-        var numImages = 2;
+        var numImages = 4;
         var numLoaded = 0;
         function imageLoaded() {
             numLoaded++;
             if (numLoaded === numImages) {
-                    //this.init();
+                    self.init();
             }
         }
         this.troll.onload = function() {
@@ -170,22 +181,38 @@ var TrollVillageModule = function(widgetDiv) {
         this.otherTroll.onload = function() {
                 imageLoaded();
         }
+        this.foodButton.onload = function() {
+                imageLoaded();
+        }
+        this.banana.onload = function() {
+                imageLoaded();
+        }
 
         // Set images src
-        this.troll.src = DOMAIN + "/static/img/troll.gif";
-        this.otherTroll.src = "/static/img/other-troll.gif";
+        this.troll.src 		= DOMAIN + "/static/img/troll.gif";
+        this.otherTroll.src = DOMAIN + "/static/img/other-troll.gif";
+        this.foodButton.src = DOMAIN + "/static/img/troll-food-button.JPG";
+        this.banana.src 	= DOMAIN + "/static/img/banana.gif";
 	}
 	this.init = function() {
+		/* init is called only after the imageRepository has loaded in all images */
 		this.drawBoard();
+		Drawable.prototype.board   		= this.board;
+		Drawable.prototype.context 		= this.movingContext;
+		StaticDrawable.prototype.context= this.staticContext;
+		LocalTroll.prototype.img 		= imageRepository.troll;
+		OtherTroll.prototype.img 		= imageRepository.otherTroll;
+		Banana.prototype.img 	 		= imageRepository.food;
+		FoodButton.prototype.img 		= imageRepository.foodButton;
+
 
 		trollConnection = new TrollConnection();
-		trollConnection.init({"trolls": this.recieveTrolls,
+		trollConnection.init({"items": this.recieveItems,
 							  "update": this.recieveUpdate,
 							  "ping": this.recievePing} );
 	}
 
-
-function Troll() {
+function Drawable() {
 	this.x;
 	this.y;
 	this.padding = 5;
@@ -197,6 +224,49 @@ function Troll() {
 
 	this.img;
 	this.context;
+
+	this.erase = function() {
+		this.context.clearRect(this.x_px, this.y_px, this.width, this.height);
+	}
+
+	this.draw = function() {
+		console.log(this)
+		if (this.x_px)
+			this.erase();
+
+		this.x_px = this.x*this.board.cellSize + this.padding;
+		this.y_px = this.y*this.board.cellSize + this.padding;
+		
+		this.context.drawImage(this.img, this.x_px, this.y_px, this.width, this.height);
+	}
+	this.setImage = function(img) {
+		this.img = img;
+	}
+	this.update = function(x, y) {
+		this.x = x;
+		this.y = y;
+		this.draw();
+	}
+	this.init = function(x, y) {
+		this.x = x;
+		this.y = y;
+		this.draw();
+	}
+}
+function StaticDrawable() {
+}
+StaticDrawable.prototype = new Drawable();
+function Banana() {
+}
+Banana.prototype = new Drawable();
+function FoodButton() {
+	this.padding = 1;
+	this.width = this.board.cellSize - 2;
+	this.height = this.board.cellSize - 2;
+}
+FoodButton.prototype = new StaticDrawable();
+
+function Troll() {
 
 	this.print = function() {
 		console.log(this)
@@ -215,38 +285,9 @@ function Troll() {
 			console.log("direction: " + direction);
 		}
 	}
-	this.erase = function() {
-		this.context.clearRect(this.x_px, this.y_px, this.width, this.height);
-	}
-
-	this.draw = function() {
-		if (this.x_px)
-			this.erase();
-
-		this.x_px = this.x*this.board.cellSize + this.padding;
-		this.y_px = this.y*this.board.cellSize + this.padding;
-		
-		this.context.drawImage(this.img, this.x_px, this.y_px, this.width, this.height);
-	}
-	this.setImage = function(img) {
-		this.img = img;
-	}
-	this.update = function(x, y) {
-		this.x = x;
-		this.y = y;
-		this.draw();
-	}
-	this.init = function(x, y, context, board) {
-		this.x = x;
-		this.y = y;
-		this.context = context;
-		this.board = board;
-		this.draw();
-	}
-
 }
+Troll.prototype = new Drawable();
 function LocalTroll() {
-	this.img = imageRepository.troll;
 	var self = this;
 
 	// need closure
@@ -258,7 +299,6 @@ function LocalTroll() {
 LocalTroll.prototype = new Troll();
 
 function OtherTroll() {
-	this.img = imageRepository.otherTroll;
 }
 OtherTroll.prototype = new Troll();
 
